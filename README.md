@@ -42,6 +42,9 @@ previously allowed requests. See [revocation behavior and in-flight order limits
 `POST /agent/request` is rate limited before parsing or database access.
 See [limits, HTTP 429 behavior, and worker configuration](docs/agent-rate-limiting.md).
 
+Background cleanup flags overdue `CREATED` payments as `STALE`, with an audit
+event and support for late webhooks. See [timeouts and cleanup behavior](docs/payment-cleanup.md).
+
 ## Running locally
 
 ```bash
