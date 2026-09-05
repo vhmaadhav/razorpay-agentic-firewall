@@ -16,34 +16,25 @@ competitive analysis) lives in [`docs/spec.md`](docs/spec.md).
 
 ## Status
 
-Actively being scaffolded. Current state:
+Feature-complete MVP: end-to-end flow, hardened against every case in the
+adversarial test suite, with a working demo dashboard. 158 tests passing.
 
 - [x] Canonical Authorization Envelope schema + Pydantic models (`app/models/envelope.py`, `app/canonical/schema.json`)
-- [x] Canonical JSON hashing (`app/canonical/hashing.py`)
-- [x] Ed25519 sign/verify (`app/crypto/signature.py`)
+- [x] Canonical JSON hashing + Ed25519 sign/verify (`app/canonical/hashing.py`, `app/crypto/`)
 - [x] Deterministic policy engine — ALLOW/BLOCK/RECONSENT (`app/policy/engine.py`)
 - [x] Agent adapters: AP2-style + generic signed delegation (`app/adapters/`)
 - [x] Evidence log with hash-chain tamper detection (`app/evidence/log.py`)
 - [x] Razorpay integration: live client + deterministic mock for keyless dev (`app/payment/razorpay_client.py`)
-- [x] DB schema (SQLite by default, Postgres-ready via `DATABASE_URL`) (`app/models/schema.py`)
-- [x] All REST routes: `/intent/compile`, `/authorization/confirm`, `/agent/request`, `/policy/evaluate`, `/payment/execute`, `/webhooks/razorpay`, `/transactions/*` (`app/routes/`)
-- [x] Adversarial test suite — all 50 cases from `docs/spec.md` §13 (`tests/test_policy_engine.py`, `tests/test_api_flow.py`)
+- [x] All REST routes: `/intent/compile`, `/authorization/confirm`, `/authorization/{id}/revoke`, `/agent/request`, `/policy/evaluate`, `/payment/execute`, `/webhooks/razorpay`, `/transactions/*` (`app/routes/`)
+- [x] Agent-level request signatures — `/agent/request` verifies a per-request Ed25519 signature bound to the mandate, not just the mandate itself ([docs/agent-request-signatures.md](docs/agent-request-signatures.md))
+- [x] Mandate revocation — operators can withdraw a mandate mid-flight; blocks future requests and payment execution ([docs/mandate-revocation.md](docs/mandate-revocation.md))
+- [x] Rate limiting on `/agent/request`, enforced before parsing or DB access ([docs/agent-rate-limiting.md](docs/agent-rate-limiting.md))
+- [x] Background cleanup flags stale `CREATED` orders as `STALE` without disturbing late webhooks ([docs/payment-cleanup.md](docs/payment-cleanup.md))
+- [x] Adversarial test suite — all 50 cases from `docs/spec.md` §13, closed with no descoped gaps (`tests/`)
 - [x] Demo script for the 4 scenarios: ALLOW / RECONSENT / BLOCK-merchant / BLOCK-replay (`scripts/demo_scenarios.py`)
-- [ ] Optional dashboard frontend — brief for a separate agent to build lives at [`docs/codex-task-dashboard.md`](docs/codex-task-dashboard.md)
+- [x] Demo dashboard — React/Vite SPA driving the real backend end-to-end, including live Ed25519 request signing via Web Crypto (`apps/dashboard/`)
 
 Run `pytest -q` or `python scripts/demo_scenarios.py` for a narrated walkthrough of all 4 demo scenarios.
-
-Agent requests require Ed25519 signatures. See [the signing protocol and client migration](docs/agent-request-signatures.md).
-
-Operators can revoke mandates with `POST /authorization/{id}/revoke`.
-Revocation blocks future agent requests and new payment execution, including
-previously allowed requests. See [revocation behavior and in-flight order limits](docs/mandate-revocation.md).
-
-`POST /agent/request` is rate limited before parsing or database access.
-See [limits, HTTP 429 behavior, and worker configuration](docs/agent-rate-limiting.md).
-
-Background cleanup flags overdue `CREATED` payments as `STALE`, with an audit
-event and support for late webhooks. See [timeouts and cleanup behavior](docs/payment-cleanup.md).
 
 ## Running locally
 
@@ -60,6 +51,22 @@ No Razorpay account is required to develop against this: leaving
 return `MockRazorpayClient`, which fabricates order IDs and HMAC-signed
 webhook payloads locally. Dropping real test-mode keys into `.env` switches
 to the live Razorpay Orders API with no code changes.
+
+## Running the dashboard
+
+With the backend running (above), in a second terminal:
+
+```bash
+cd apps/dashboard
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. It drives the real backend end-to-end — compile
+an intent, sign the mandate (Ed25519 keys generated in-browser via Web
+Crypto, never sent to the server), submit one of the 4 preset carts, and
+watch the hash-chained evidence trail update live. See
+[`apps/dashboard/README.md`](apps/dashboard/README.md) for details.
 
 ## Repository layout
 
