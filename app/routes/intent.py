@@ -36,7 +36,7 @@ class IntentResponse(BaseModel):
     confidence: float
 
 
-_AMOUNT_RE = re.compile(r"(?:under|max(?:imum)?|up to|cap(?:ped)? at)?\s*₹\s*([\d,]+)|₹\s*([\d,]+)", re.IGNORECASE)
+_AMOUNT_RE = re.compile(r"₹\s*([\d,]+)\s*(k|K)?")
 _MERCHANT_RE = re.compile(r"from\s+([A-Za-z][A-Za-z0-9 _-]*?)(?:\s+only\b|[,.]|$)", re.IGNORECASE)
 _QTY_RE = re.compile(r"\b(\d+)\s+([a-zA-Z]+)")
 _EXPIRY_RE = re.compile(r"expir\w*\s+in\s+(\d+)\s*min", re.IGNORECASE)
@@ -50,8 +50,8 @@ def compile_intent(req: IntentRequest) -> IntentResponse:
     amount_match = _AMOUNT_RE.search(text)
     max_total = None
     if amount_match:
-        raw = (amount_match.group(1) or amount_match.group(2)).replace(",", "")
-        max_total = int(raw)
+        raw = int(amount_match.group(1).replace(",", ""))
+        max_total = raw * 1000 if amount_match.group(2) else raw
         found_fields += 1
 
     merchant_match = _MERCHANT_RE.search(text)

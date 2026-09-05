@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import NamedTuple
 
+from app.canonical.hashing import compute_evidence_hash
 from app.crypto import signature as crypto_signature
 from app.models.envelope import CanonicalAuthorizationEnvelope, Cart
 
@@ -65,10 +66,20 @@ def evaluate_policy(
 ) -> PolicyResult:
     now = current_time or datetime.now(timezone.utc)
 
-    # 1. Signature: the mandate must be signed and untampered.
+    # 1. Signature: the mandate must be signed and untampered. We recompute
+    #    evidence_hash from the envelope's CURRENT fields — comparing only
+    #    the signature against the envelope's own (possibly tampered)
+    #    evidence_hash field would let an attacker edit e.g. max_total
+    #    without invalidating the signature, since evidence_hash and
+    #    signature are just two more fields on the same object.
     if not skip_signature_check:
         pub_key = verification_public_key or auth.agent.public_key
-        if not auth.signature or not crypto_signature.verify(auth.evidence_hash, auth.signature, pub_key):
+        recomputed_hash = compute_evidence_hash(auth.unsigned_dict())
+        if (
+            recomputed_hash != auth.evidence_hash
+            or not auth.signature
+            or not crypto_signature.verify(recomputed_hash, auth.signature, pub_key)
+        ):
             return PolicyResult(Decision.BLOCK, Reason.SIGNATURE_INVALID, "Mandate signature is missing or invalid.")
 
     # 2. Temporal validity.
@@ -94,15 +105,19 @@ def evaluate_policy(
             f"Merchant '{cart.merchant_id}' is not in the authorized merchant list.",
         )
 
-    # 5. Execution scope: mandate reuse budget.
+    # 5. Replay protection — checked before execution-scope exhaustion so a
+    #    replayed request reports NONCE_ALREADY_USED rather than the less
+    #    specific MANDATE_EXHAUSTED (which would otherwise fire first, since
+    #    a successful first use already consumed the mandate's one allowed
+    #    transaction by the time the replay arrives).
+    if nonce_already_used:
+        return PolicyResult(Decision.BLOCK, Reason.NONCE_ALREADY_USED, "This nonce has already been consumed.")
+
+    # 6. Execution scope: mandate reuse budget.
     if auth.execution_scope.max_transactions <= 0:
         return PolicyResult(Decision.BLOCK, Reason.MANDATE_EXHAUSTED, "Mandate allows zero transactions.")
     if transactions_used >= auth.execution_scope.max_transactions:
         return PolicyResult(Decision.BLOCK, Reason.MANDATE_EXHAUSTED, "Mandate has no remaining uses.")
-
-    # 6. Replay protection.
-    if nonce_already_used:
-        return PolicyResult(Decision.BLOCK, Reason.NONCE_ALREADY_USED, "This nonce has already been consumed.")
 
     # 7. Cart well-formedness (defend against malformed/negative-value carts).
     if cart.total is None or cart.total < 0 or cart.shipping < 0 or cart.tax < 0:

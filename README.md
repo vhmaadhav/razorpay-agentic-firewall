@@ -26,11 +26,12 @@ Actively being scaffolded. Current state:
 - [x] Evidence log with hash-chain tamper detection (`app/evidence/log.py`)
 - [x] Razorpay integration: live client + deterministic mock for keyless dev (`app/payment/razorpay_client.py`)
 - [x] DB schema (SQLite by default, Postgres-ready via `DATABASE_URL`) (`app/models/schema.py`)
-- [x] `/intent/compile` stub endpoint
-- [ ] `/authorization/confirm`, `/agent/request`, `/policy/evaluate`, `/payment/execute`, `/webhooks/razorpay`, `/transactions/*` routes
-- [ ] Adversarial test suite (50 cases from `docs/spec.md` §13)
-- [ ] Demo scripts for the 4 scenarios (ALLOW / RECONSENT / BLOCK-merchant / BLOCK-replay)
-- [ ] Optional dashboard frontend
+- [x] All REST routes: `/intent/compile`, `/authorization/confirm`, `/agent/request`, `/policy/evaluate`, `/payment/execute`, `/webhooks/razorpay`, `/transactions/*` (`app/routes/`)
+- [x] Adversarial test suite — all 50 cases from `docs/spec.md` §13 (`tests/test_policy_engine.py`, `tests/test_api_flow.py`)
+- [x] Demo script for the 4 scenarios: ALLOW / RECONSENT / BLOCK-merchant / BLOCK-replay (`scripts/demo_scenarios.py`)
+- [ ] Optional dashboard frontend — brief for a separate agent to build lives at [`docs/codex-task-dashboard.md`](docs/codex-task-dashboard.md)
+
+Run `pytest -q` (69 passed, 1 intentionally skipped) or `python scripts/demo_scenarios.py` for a narrated walkthrough of all 4 demo scenarios.
 
 ## Running locally
 

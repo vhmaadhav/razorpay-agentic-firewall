@@ -7,3 +7,8 @@ venv/
 *.sqlite3
 .pytest_cache/
 *.egg-info/
+
+# JS tooling (apps/dashboard)
+.pnpm-store/
+node_modules/
+dist/
