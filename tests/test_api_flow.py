@@ -14,6 +14,14 @@ from sqlalchemy.pool import StaticPool
 import app.db as db_module
 from app.db import Base
 from app.models import schema  # noqa: F401 (registers tables on Base.metadata)
+from app.crypto.signature import generate_keypair
+from app.crypto.agent_request import sign_request
+
+AGENT_PRIVATE_KEY, AGENT_PUBLIC_KEY = generate_keypair()
+
+
+def post_signed(client, path, *, json):
+    return client.post(path, json=sign_request(json, AGENT_PRIVATE_KEY))
 
 
 @pytest.fixture()
@@ -34,6 +42,7 @@ def client(monkeypatch):
 
 
 DEMO_MANDATE = {
+    "agent_id": "agent_xyz",
     "user_id": "user_789",
     "merchant_name": "MerchantA",
     "quantity": 3,
@@ -47,7 +56,7 @@ DEMO_MANDATE = {
 
 def confirm_demo_mandate(client, **overrides):
     mandate = {**DEMO_MANDATE, **overrides}
-    resp = client.post("/authorization/confirm", json={"mandate": mandate})
+    resp = client.post("/authorization/confirm", json={"mandate": mandate, "agent_public_key": AGENT_PUBLIC_KEY})
     assert resp.status_code == 200, resp.text
     return resp.json()["authorization_id"]
 
@@ -68,7 +77,7 @@ def demo_cart(**overrides):
 def test_scenario_1_allow_full_flow_through_payment_and_evidence(client):
     auth_id = confirm_demo_mandate(client)
 
-    r = client.post(
+    r = post_signed(client,
         "/agent/request",
         json={"authorization_id": auth_id, "nonce": "n1", "agent_id": "agent_xyz", "cart": demo_cart()},
     )
@@ -97,7 +106,7 @@ def test_scenario_2_reconsent_on_budget_violation(client):
         total=26200,  # 3*7500 + 1200 shipping + 2500 warranty
     )
 
-    r = client.post(
+    r = post_signed(client,
         "/agent/request", json={"authorization_id": auth_id, "nonce": "n1", "agent_id": "agent_xyz", "cart": over_budget_cart}
     )
     body = r.json()
@@ -115,7 +124,7 @@ def test_scenario_2b_pure_budget_violation_without_new_sku_is_reconsent(client):
         items=[{"sku": "CHAIR1", "unit_price": 9000, "quantity": 3, "category": "chair"}],
         total=28200,
     )
-    r = client.post(
+    r = post_signed(client,
         "/agent/request", json={"authorization_id": auth_id, "nonce": "n1", "agent_id": "agent_xyz", "cart": over_budget_cart}
     )
     body = r.json()
@@ -132,7 +141,7 @@ def test_scenario_3_block_wrong_merchant(client):
         shipping=0, total=15000,
     )
 
-    r = client.post(
+    r = post_signed(client,
         "/agent/request",
         json={"authorization_id": auth_id, "nonce": "n1", "agent_id": "agent_xyz", "cart": wrong_merchant_cart},
     )
@@ -145,10 +154,10 @@ def test_scenario_4_replay_attack_is_blocked(client):
     auth_id = confirm_demo_mandate(client)
     payload = {"authorization_id": auth_id, "nonce": "n1", "agent_id": "agent_xyz", "cart": demo_cart()}
 
-    first = client.post("/agent/request", json=payload)
+    first = post_signed(client, "/agent/request", json=payload)
     assert first.json()["decision"] == "ALLOW"
 
-    replay = client.post("/agent/request", json=payload)  # identical request, same nonce
+    replay = post_signed(client, "/agent/request", json=payload)  # Ed25519 is deterministic
     assert replay.json()["decision"] == "BLOCK"
     assert replay.json()["reason"] == "NONCE_ALREADY_USED"
 
@@ -162,7 +171,7 @@ def test_case_35_payment_execute_ignores_client_supplied_cart(client):
     the policy check and order creation — the server re-reads its own stored
     agent_requests row (see app/routes/payment.py)."""
     auth_id = confirm_demo_mandate(client)
-    r = client.post(
+    r = post_signed(client,
         "/agent/request",
         json={"authorization_id": auth_id, "nonce": "n1", "agent_id": "agent_xyz", "cart": demo_cart()},
     )
@@ -184,7 +193,7 @@ def test_case_42_webhook_amount_mismatch_is_flagged(client):
     from app.models.schema import PaymentExecution
 
     auth_id = confirm_demo_mandate(client)
-    r = client.post(
+    r = post_signed(client,
         "/agent/request", json={"authorization_id": auth_id, "nonce": "n1", "agent_id": "agent_xyz", "cart": demo_cart()}
     )
     request_id = r.json()["request_id"]
@@ -212,7 +221,7 @@ def test_case_42_webhook_amount_mismatch_is_flagged(client):
 
 def test_case_46_webhook_with_corrupted_signature_is_rejected(client):
     auth_id = confirm_demo_mandate(client)
-    r = client.post(
+    r = post_signed(client,
         "/agent/request", json={"authorization_id": auth_id, "nonce": "n1", "agent_id": "agent_xyz", "cart": demo_cart()}
     )
     request_id = r.json()["request_id"]
@@ -234,7 +243,7 @@ def test_case_46_webhook_with_corrupted_signature_is_rejected(client):
 
 def test_case_47_duplicate_webhook_delivery_is_ignored(client):
     auth_id = confirm_demo_mandate(client)
-    r = client.post(
+    r = post_signed(client,
         "/agent/request", json={"authorization_id": auth_id, "nonce": "n1", "agent_id": "agent_xyz", "cart": demo_cart()}
     )
     request_id = r.json()["request_id"]

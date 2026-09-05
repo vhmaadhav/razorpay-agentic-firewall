@@ -25,6 +25,7 @@
         "agent_id": { "type": "string" },
         "provider": { "type": "string" },
         "public_key": { "type": "string" },
+        "request_public_key": { "type": ["string", "null"] },
         "trust_level": { "type": "string" }
       }
     },

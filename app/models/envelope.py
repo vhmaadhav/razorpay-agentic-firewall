@@ -13,6 +13,7 @@ class Agent(BaseModel):
     agent_id: str
     provider: str
     public_key: str
+    request_public_key: str | None = None
     trust_level: str = "user_key"
 
 
