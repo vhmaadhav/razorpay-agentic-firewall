@@ -14,19 +14,50 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.evidence.log import append_event
+from app.crypto.agent_request import request_hash
+from app.crypto.signature import verify
+from app.canonical.hashing import compute_evidence_hash
 from app.models.envelope import Cart, CanonicalAuthorizationEnvelope
 from app.models.schema import AgentRequestRow, Authorization, PolicyDecision
 from app.policy.engine import Decision, evaluate_policy
 
 
 def evaluate_agent_request(
-    db: Session, *, authorization_id: str, agent_id: str, nonce: str, cart: Cart
+    db: Session, *, authorization_id: str, agent_id: str, nonce: str, cart: Cart,
+    agent_signature: str | None = None,
 ) -> dict:
     auth_row = db.get(Authorization, authorization_id)
     if not auth_row:
         raise HTTPException(status_code=404, detail="Unknown authorization_id")
 
     auth_envelope = CanonicalAuthorizationEnvelope(**auth_row.envelope)
+
+    # Verify before looking up/consuming nonces or altering a prior decision.
+    # An unauthenticated sender must not poison another agent's valid nonce.
+    mandate_hash = compute_evidence_hash(auth_envelope.unsigned_dict())
+    reason = None
+    if (mandate_hash != auth_envelope.evidence_hash or not auth_envelope.signature
+            or not verify(mandate_hash, auth_envelope.signature, auth_envelope.agent.public_key)):
+        reason = "SIGNATURE_INVALID"
+    elif agent_id != auth_envelope.agent.agent_id:
+        reason = "AGENT_ID_MISMATCH"
+    elif not auth_envelope.agent.request_public_key:
+        reason = "AGENT_KEY_MISSING"
+    elif not agent_signature or not verify(
+        request_hash(authorization_id=authorization_id, agent_id=agent_id, nonce=nonce, cart=cart),
+        agent_signature, auth_envelope.agent.request_public_key,
+    ):
+        reason = "AGENT_SIGNATURE_INVALID"
+    if reason:
+        append_event(
+            db, transaction_id=authorization_id, event_type="AGENT_REQUEST_REJECTED",
+            actor="agent-verifier",
+            payload={"claimed_agent_id": agent_id, "reason": reason},
+        )
+        raise HTTPException(status_code=401, detail={
+            "decision": "BLOCK", "reason": reason,
+            "message": "Agent request authentication failed. Confirm the mandate and sign the complete request.",
+        })
 
     existing = (
         db.query(AgentRequestRow)
@@ -81,7 +112,8 @@ def evaluate_agent_request(
         transaction_id=authorization_id,
         event_type="AGENT_REQUEST_RECEIVED" if not nonce_already_used else "REPLAY_ATTEMPT_BLOCKED",
         actor=agent_id,
-        payload={"request_id": request_id, "nonce": nonce, "cart": cart.model_dump()},
+        payload={"request_id": request_id, "nonce": nonce, "cart": cart.model_dump(),
+                 "agent_signature": agent_signature, "signature_verified": True},
     )
     append_event(
         db,

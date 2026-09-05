@@ -35,7 +35,8 @@ class AgentRequestOut(BaseModel):
 @router.post("/request", response_model=AgentRequestOut)
 def submit_agent_request(req: AgentRequestIn, db: Session = Depends(get_db)) -> AgentRequestOut:
     result = evaluate_agent_request(
-        db, authorization_id=req.authorization_id, agent_id=req.agent_id, nonce=req.nonce, cart=req.cart
+        db, authorization_id=req.authorization_id, agent_id=req.agent_id, nonce=req.nonce,
+        cart=req.cart, agent_signature=req.agent_signature,
     )
     return AgentRequestOut(
         request_id=result["request_id"],

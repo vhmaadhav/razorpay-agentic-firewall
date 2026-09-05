@@ -239,14 +239,7 @@ def test_case_26_invalid_signature_blocks():
     assert result.reason == Reason.SIGNATURE_INVALID
 
 
-@pytest.mark.skip(
-    reason="Case 27 (agent-level per-request signature) is a distinct concern "
-    "from the mandate signature this engine verifies (case 26) — per-request "
-    "agent signatures are checked at the adapter/ingestion layer in the full "
-    "system, not inside the pure policy engine. Not yet wired end-to-end."
-)
-def test_case_27_invalid_agent_request_signature_blocks():
-    pass
+# Case 27 is exercised at ingestion in tests/test_agent_signatures.py.
 
 
 def test_case_28_nonce_reuse_blocks():

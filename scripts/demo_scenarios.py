@@ -21,10 +21,13 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///./demo_scenarios.db")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
+from app.crypto.signature import generate_keypair  # noqa: E402
+from app.crypto.agent_request import sign_request  # noqa: E402
 from app.payment.razorpay_client import MockRazorpayClient, OrderResult  # noqa: E402
 
 GREEN, ORANGE, RED, RESET, BOLD = "\033[92m", "\033[93m", "\033[91m", "\033[0m", "\033[1m"
 BADGE = {"ALLOW": f"{GREEN}ALLOW{RESET}", "RECONSENT": f"{ORANGE}RECONSENT{RESET}", "BLOCK": f"{RED}BLOCK{RESET}"}
+AGENT_PRIVATE_KEY, AGENT_PUBLIC_KEY = generate_keypair()
 
 
 def banner(title: str) -> None:
@@ -33,12 +36,13 @@ def banner(title: str) -> None:
 
 def confirm_mandate(client, **overrides) -> str:
     mandate = {
+        "agent_id": "agent_xyz",
         "user_id": "user_789", "merchant_name": "MerchantA", "quantity": 3, "category": "chair",
         "allowed_skus": ["CHAIR1"], "max_total": 25000, "substitutions_allowed": False,
         "expires_in_minutes": 20,
     }
     mandate.update(overrides)
-    resp = client.post("/authorization/confirm", json={"mandate": mandate})
+    resp = client.post("/authorization/confirm", json={"mandate": mandate, "agent_public_key": AGENT_PUBLIC_KEY})
     body = resp.json()
     print(f"Mandate signed: authorization_id={body['authorization_id']} (max_total=₹{mandate['max_total']})")
     return body["authorization_id"]
@@ -46,7 +50,10 @@ def confirm_mandate(client, **overrides) -> str:
 
 def submit_cart(client, auth_id: str, nonce: str, cart: dict) -> dict:
     resp = client.post(
-        "/agent/request", json={"authorization_id": auth_id, "nonce": nonce, "agent_id": "agent_xyz", "cart": cart}
+        "/agent/request", json=sign_request(
+            {"authorization_id": auth_id, "nonce": nonce, "agent_id": "agent_xyz", "cart": cart},
+            AGENT_PRIVATE_KEY,
+        )
     )
     body = resp.json()
     print(f"Agent submitted cart (total=₹{cart['total']}) -> {BADGE.get(body['decision'], body['decision'])}")

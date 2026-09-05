@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createAgentKey, signAgentRequest } from "./request-signing.js";
 
 const DEFAULT_INTENT =
   "Buy 3 chairs, max ₹25,000, from Merchant A only, no substitutions, expires in 20 minutes.";
@@ -196,6 +197,8 @@ export default function App() {
   const [mandateText, setMandateText] = useState("");
   const [confidence, setConfidence] = useState(null);
   const [authorization, setAuthorization] = useState(null);
+  const [agentKey, setAgentKey] = useState(null);
+  const [replayPayload, setReplayPayload] = useState(null);
   const [canonicalEnvelope, setCanonicalEnvelope] = useState(null);
   const [scenarioKey, setScenarioKey] = useState("allow");
   const [cart, setCart] = useState(clone(SCENARIOS.allow.cart));
@@ -238,6 +241,8 @@ export default function App() {
   }, [authorizationId, refreshEvidence]);
 
   function resetDownstream() {
+    setAgentKey(null);
+    setReplayPayload(null);
     setAuthorization(null);
     setCanonicalEnvelope(null);
     setDecision(null);
@@ -269,10 +274,15 @@ export default function App() {
     setError("");
     try {
       const mandate = JSON.parse(mandateText);
+      const approvedAgentId = mandate.agent_id || agentId;
+      const key = await createAgentKey();
       const result = await api("/authorization/confirm", {
         method: "POST",
-        body: JSON.stringify({ mandate }),
+        body: JSON.stringify({ mandate: { ...mandate, agent_id: approvedAgentId }, agent_public_key: key.publicKey }),
       });
+      setAgentId(approvedAgentId);
+      setAgentKey(key.privateKey);
+      setReplayPayload(null);
       setAuthorization(result);
       let envelope = result.canonical_envelope || result.envelope;
       if (!envelope) {
@@ -334,6 +344,8 @@ export default function App() {
     setError("");
     setPayment(null);
     try {
+      if (!agentKey) throw new Error("Confirm a mandate to create the agent signing key.");
+      if (scenarioKey === "replay" && !replayPayload) throw new Error("Submit Scenario 1 before replaying its signed request.");
       const payload = {
         authorization_id: authorizationId,
         nonce,
@@ -350,9 +362,11 @@ export default function App() {
           total,
         },
       };
+      const signed = scenarioKey === "replay" ? replayPayload : await signAgentRequest(payload, agentKey);
+      if (scenarioKey === "allow") setReplayPayload(signed);
       const result = await api("/agent/request", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify(signed),
       });
       setDecision(result);
       await refreshEvidence();

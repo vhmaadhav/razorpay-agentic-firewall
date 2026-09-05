@@ -31,7 +31,9 @@ Actively being scaffolded. Current state:
 - [x] Demo script for the 4 scenarios: ALLOW / RECONSENT / BLOCK-merchant / BLOCK-replay (`scripts/demo_scenarios.py`)
 - [ ] Optional dashboard frontend — brief for a separate agent to build lives at [`docs/codex-task-dashboard.md`](docs/codex-task-dashboard.md)
 
-Run `pytest -q` (69 passed, 1 intentionally skipped) or `python scripts/demo_scenarios.py` for a narrated walkthrough of all 4 demo scenarios.
+Run `pytest -q` or `python scripts/demo_scenarios.py` for a narrated walkthrough of all 4 demo scenarios.
+
+Agent requests require Ed25519 signatures. See [the signing protocol and client migration](docs/agent-request-signatures.md).
 
 ## Running locally
 

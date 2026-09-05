@@ -37,8 +37,8 @@ def derive_public_key(private_key_b64: str) -> str:
 
 def verify(evidence_hash: str, signature_b64: str, public_key_b64: str) -> bool:
     try:
-        raw_pub = base64.b64decode(public_key_b64)
-        raw_sig = base64.b64decode(signature_b64)
+        raw_pub = base64.b64decode(public_key_b64, validate=True)
+        raw_sig = base64.b64decode(signature_b64, validate=True)
         public_key = Ed25519PublicKey.from_public_bytes(raw_pub)
         public_key.verify(raw_sig, evidence_hash.encode("ascii"))
         return True

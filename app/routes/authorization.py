@@ -12,7 +12,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+import base64
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from sqlalchemy.orm import Session
 
 from app.canonical.hashing import compute_evidence_hash
@@ -38,7 +40,17 @@ router = APIRouter(prefix="/authorization", tags=["authorization"])
 
 class ConfirmRequest(BaseModel):
     mandate: dict[str, Any]
+    agent_public_key: str
     signing_private_key: str | None = None
+
+    @field_validator("agent_public_key")
+    @classmethod
+    def validate_agent_key(cls, value: str) -> str:
+        try:
+            Ed25519PublicKey.from_public_bytes(base64.b64decode(value, validate=True))
+        except (ValueError, TypeError) as exc:
+            raise ValueError("agent_public_key must be a base64 Ed25519 public key") from exc
+        return value
 
 
 class ConfirmResponse(BaseModel):
@@ -108,6 +120,9 @@ def confirm_authorization(req: ConfirmRequest, db: Session = Depends(get_db)) ->
     public_key = crypto_signature.derive_public_key(private_key)
 
     envelope = _build_envelope(req.mandate, public_key)
+    # The mandate signer approves the agent key; the agent never receives
+    # the mandate signing key and cannot grant itself different constraints.
+    envelope.agent.request_public_key = req.agent_public_key
     evidence_hash = compute_evidence_hash(envelope.unsigned_dict())
     envelope.evidence_hash = evidence_hash
     envelope.signature = crypto_signature.sign(evidence_hash, private_key)
