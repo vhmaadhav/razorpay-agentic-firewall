@@ -416,9 +416,9 @@ def test_case_45_prompt_injection_in_intent_text_cannot_reach_policy_engine():
 
 def test_case_46_47_48_49_covered_in_api_flow_or_descoped():
     """Case 46 (corrupted webhook signature), 47 (duplicate webhook delivery):
-    see tests/test_api_flow.py. Case 48 (zombie payment / stale PAYMENT_PENDING
-    cleanup) still requires a background job. Case 49 (mid-flight revocation)
-    is exercised in tests/test_revocation.py."""
+    see tests/test_api_flow.py. Case 48 (zombie payment cleanup) is exercised
+    in tests/test_payment_cleanup.py. Case 49 (mid-flight revocation) is
+    exercised in tests/test_revocation.py."""
 
 
 def test_case_50_schema_mismatch_covered_in_api_flow():

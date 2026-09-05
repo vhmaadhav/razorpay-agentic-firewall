@@ -10,9 +10,9 @@ import json
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import get_db, lock_authorization
 from app.evidence.log import append_event
-from app.models.schema import PaymentEvent, PaymentExecution, SeenWebhookEvent
+from app.models.schema import PaymentEvent, PaymentExecution, SeenWebhookEvent, PolicyDecision
 from app.payment.razorpay_client import get_payment_executor
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -39,15 +39,20 @@ async def razorpay_webhook(
     if not payment_id or not order_id:
         raise HTTPException(status_code=400, detail="Malformed webhook payload")
 
-    if db.get(SeenWebhookEvent, payment_id):
-        return {"status": "duplicate_ignored"}
-
-    db.add(SeenWebhookEvent(razorpay_payment_id=payment_id, event_type=event.get("event", "unknown")))
-
     execution = db.query(PaymentExecution).filter(PaymentExecution.razorpay_order_id == order_id).first()
     if not execution:
-        db.commit()
         raise HTTPException(status_code=404, detail="Unknown order_id — ignoring webhook")
+
+    decision = db.get(PolicyDecision, execution.decision_id)
+    if not decision:
+        raise HTTPException(status_code=404, detail="Unknown order decision")
+    # Cleanup, revocation and payment execution use this same lock. Refresh
+    # the execution after acquiring it in case cleanup changed CREATED to STALE.
+    lock_authorization(db, decision.authorization_id)
+    db.refresh(execution)
+    if db.get(SeenWebhookEvent, payment_id):
+        return {"status": "duplicate_ignored"}
+    db.add(SeenWebhookEvent(razorpay_payment_id=payment_id, event_type=event.get("event", "unknown")))
 
     signature_verified = True
     amount_mismatch = amount is not None and amount != execution.amount
@@ -63,12 +68,7 @@ async def razorpay_webhook(
             signature_verified=signature_verified,
         )
     )
-    db.commit()
-
-    # Walk back to the authorization_id via decision -> request chain for evidence logging.
-    from app.models.schema import PolicyDecision  # local import avoids a circular top-level dependency
-
-    decision = db.get(PolicyDecision, execution.decision_id)
+    # Commit status, deduplication, webhook record, and evidence together.
     if decision:
         append_event(
             db,

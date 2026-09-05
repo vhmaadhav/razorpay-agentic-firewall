@@ -1,8 +1,11 @@
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI
 
 from app.db import init_db
+import app.db as db_module
+from app.payment.cleanup import run_payment_cleanup
 from app.config import settings
 from app.rate_limit import AgentRequestLimiter, AgentRateLimitMiddleware
 from app.routes import agent, authorization, intent, payment, policy, transactions, webhooks
@@ -10,6 +13,11 @@ from app.routes import agent, authorization, intent, payment, policy, transactio
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if any(value <= 0 for value in (
+        settings.payment_stale_after_seconds, settings.payment_cleanup_interval_seconds,
+        settings.payment_cleanup_batch_size,
+    )):
+        raise ValueError("Payment cleanup timeout, interval, and batch size must be positive")
     app.state.agent_request_limiter = AgentRequestLimiter(
         per_client=settings.agent_rate_limit,
         global_limit=settings.agent_rate_limit_global,
@@ -17,7 +25,18 @@ async def lifespan(app: FastAPI):
         max_clients=settings.agent_rate_limit_max_clients,
     )
     init_db()
-    yield
+    stop = asyncio.Event()
+    cleanup_task = asyncio.create_task(run_payment_cleanup(
+        stop, db_module.SessionLocal,
+        timeout_seconds=settings.payment_stale_after_seconds,
+        interval_seconds=settings.payment_cleanup_interval_seconds,
+        batch_size=settings.payment_cleanup_batch_size,
+    ))
+    try:
+        yield
+    finally:
+        stop.set()
+        await cleanup_task
 
 
 app = FastAPI(
