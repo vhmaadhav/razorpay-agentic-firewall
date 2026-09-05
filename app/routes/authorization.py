@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 import base64
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from sqlalchemy.orm import Session
@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.canonical.hashing import compute_evidence_hash
 from app.config import settings
 from app.crypto import signature as crypto_signature
-from app.db import get_db
+from app.db import get_db, lock_authorization
 from app.evidence.log import append_event
 from app.models.envelope import (
     Agent,
@@ -33,7 +33,7 @@ from app.models.envelope import (
     QuantityScope,
     TemporalScope,
 )
-from app.models.schema import Authorization
+from app.models.schema import Authorization, MandateRevocation
 
 router = APIRouter(prefix="/authorization", tags=["authorization"])
 
@@ -157,4 +157,51 @@ def confirm_authorization(req: ConfirmRequest, db: Session = Depends(get_db)) ->
         status="SIGNED",
         public_key=public_key,
         evidence_hash=evidence_hash,
+    )
+
+
+class RevokeRequest(BaseModel):
+    reason: str = Field(default="operator_request", min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def nonblank_reason(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("reason must not be blank")
+        return value.strip()
+
+
+class RevokeResponse(BaseModel):
+    authorization_id: str
+    status: str
+    reason: str
+    revoked_at: datetime
+
+
+@router.post("/{authorization_id}/revoke", response_model=RevokeResponse)
+def revoke_authorization(
+    authorization_id: str, req: RevokeRequest, db: Session = Depends(get_db),
+) -> RevokeResponse:
+    # Same trusted local operator boundary as /confirm. Never accept an
+    # agent-supplied actor as proof of principal identity.
+    lock_authorization(db, authorization_id)
+    row = db.get(MandateRevocation, authorization_id)
+    if row is None:
+        row = MandateRevocation(
+            authorization_id=authorization_id, reason=req.reason,
+            revoked_at=datetime.now(timezone.utc),
+        )
+        db.add(row)
+        # append_event commits the revocation and its evidence together.
+        append_event(
+            db, transaction_id=authorization_id, event_type="MANDATE_REVOKED",
+            actor="trusted-operator",
+            payload={"authorization_id": authorization_id, "reason": row.reason,
+                     "revoked_at": row.revoked_at.isoformat()},
+        )
+    else:
+        db.commit()
+    return RevokeResponse(
+        authorization_id=authorization_id, status="REVOKED", reason=row.reason,
+        revoked_at=row.revoked_at.replace(tzinfo=timezone.utc),
     )

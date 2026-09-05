@@ -11,10 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import get_db, lock_authorization
 from app.evidence.log import append_event
 from app.models.envelope import Cart
-from app.models.schema import AgentRequestRow, PaymentExecution, PolicyDecision
+from app.models.schema import AgentRequestRow, MandateRevocation, PaymentExecution, PolicyDecision
 from app.payment.razorpay_client import get_payment_executor
 from app.policy.engine import Decision
 
@@ -34,6 +34,14 @@ class ExecuteResponse(BaseModel):
 
 @router.post("/execute", response_model=ExecuteResponse)
 def execute_payment(req: ExecuteRequest, db: Session = Depends(get_db)) -> ExecuteResponse:
+    # Keep this lock until order creation commits. A concurrent revocation
+    # either wins before any external call or waits for this in-flight order.
+    lock_authorization(db, req.authorization_id)
+    if db.get(MandateRevocation, req.authorization_id):
+        raise HTTPException(status_code=409, detail={
+            "decision": "BLOCK", "reason": "MANDATE_REVOKED",
+            "message": "Cannot execute payment: mandate has been revoked.",
+        })
     decision_row = (
         db.query(PolicyDecision)
         .filter(PolicyDecision.request_id == req.request_id, PolicyDecision.authorization_id == req.authorization_id)
@@ -67,8 +75,6 @@ def execute_payment(req: ExecuteRequest, db: Session = Depends(get_db)) -> Execu
             status="CREATED",
         )
     )
-    db.commit()
-
     append_event(
         db,
         transaction_id=req.authorization_id,
