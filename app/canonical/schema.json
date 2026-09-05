@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CanonicalAuthorizationEnvelope",
+  "type": "object",
+  "required": [
+    "version", "authorization_id", "principal", "agent", "merchant_scope",
+    "product_scope", "financial_scope", "quantity_scope", "temporal_scope",
+    "execution_scope", "nonce", "evidence_hash"
+  ],
+  "properties": {
+    "version": { "type": "string" },
+    "authorization_id": { "type": "string" },
+    "principal": {
+      "type": "object",
+      "required": ["user_id", "identity_provider"],
+      "properties": {
+        "user_id": { "type": "string" },
+        "identity_provider": { "type": "string" }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "required": ["agent_id", "provider", "public_key", "trust_level"],
+      "properties": {
+        "agent_id": { "type": "string" },
+        "provider": { "type": "string" },
+        "public_key": { "type": "string" },
+        "trust_level": { "type": "string" }
+      }
+    },
+    "merchant_scope": {
+      "type": "object",
+      "required": ["merchant_ids", "merchant_categories"],
+      "properties": {
+        "merchant_ids": { "type": "array", "items": { "type": "string" } },
+        "merchant_categories": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "product_scope": {
+      "type": "object",
+      "required": ["allowed_skus", "allowed_categories", "forbidden_skus", "substitutions_allowed"],
+      "properties": {
+        "allowed_skus": { "type": "array", "items": { "type": "string" } },
+        "allowed_categories": { "type": "array", "items": { "type": "string" } },
+        "forbidden_skus": { "type": "array", "items": { "type": "string" } },
+        "substitutions_allowed": { "type": "boolean" }
+      }
+    },
+    "financial_scope": {
+      "type": "object",
+      "required": ["currency", "max_total", "shipping_included", "tax_included", "tips_allowed"],
+      "properties": {
+        "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+        "max_total": { "type": "integer", "minimum": 0 },
+        "max_unit_price": { "type": ["integer", "null"] },
+        "shipping_included": { "type": "boolean" },
+        "tax_included": { "type": "boolean" },
+        "tips_allowed": { "type": "boolean" }
+      }
+    },
+    "quantity_scope": {
+      "type": "object",
+      "required": ["max_items"],
+      "properties": {
+        "max_items": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "temporal_scope": {
+      "type": "object",
+      "required": ["issued_at", "expires_at"],
+      "properties": {
+        "issued_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "execution_scope": {
+      "type": "object",
+      "required": ["max_transactions", "reusable"],
+      "properties": {
+        "max_transactions": { "type": "integer", "minimum": 0 },
+        "reusable": { "type": "boolean" }
+      }
+    },
+    "nonce": { "type": "string", "minLength": 1 },
+    "evidence_hash": { "type": "string" },
+    "signature": { "type": ["string", "null"] }
+  }
+}

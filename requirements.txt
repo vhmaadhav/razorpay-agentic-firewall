@@ -1,0 +1,10 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+sqlalchemy>=2.0
+cryptography>=43.0
+python-dotenv>=1.0
+jsonschema>=4.23
+razorpay>=1.4.2
+pytest>=8.3
+httpx>=0.27
