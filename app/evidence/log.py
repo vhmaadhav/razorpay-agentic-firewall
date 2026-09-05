@@ -17,7 +17,8 @@ from app.models.schema import EvidenceEvent
 GENESIS_HASH = "0" * 64
 
 
-def append_event(db: Session, *, transaction_id: str, event_type: str, actor: str, payload: dict[str, Any]) -> EvidenceEvent:
+def append_event(db: Session, *, transaction_id: str, event_type: str, actor: str,
+                 payload: dict[str, Any], commit: bool = True) -> EvidenceEvent:
     last = (
         db.query(EvidenceEvent)
         .filter(EvidenceEvent.transaction_id == transaction_id)
@@ -38,8 +39,13 @@ def append_event(db: Session, *, transaction_id: str, event_type: str, actor: st
         payload=payload,
     )
     db.add(event)
-    db.commit()
-    db.refresh(event)
+    if commit:
+        db.commit()
+        db.refresh(event)
+    else:
+        # Flush makes this event visible to the next append in this transaction
+        # while allowing callers to retain their lock until the full operation.
+        db.flush()
     return event
 
 

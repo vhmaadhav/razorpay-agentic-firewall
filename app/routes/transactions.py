@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.evidence.log import get_chain, verify_chain
-from app.models.schema import AgentRequestRow, Authorization, PaymentExecution, PolicyDecision
+from app.models.schema import AgentRequestRow, Authorization, MandateRevocation, PaymentExecution, PolicyDecision
+from datetime import timezone
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -28,8 +29,14 @@ def get_transaction(authorization_id: str, db: Session = Depends(get_db)) -> dic
         else []
     )
 
+    revocation = db.get(MandateRevocation, authorization_id)
     return {
         "authorization_id": authorization_id,
+        "status": "REVOKED" if revocation else "SIGNED",
+        "revocation": {
+            "reason": revocation.reason,
+            "revoked_at": revocation.revoked_at.replace(tzinfo=timezone.utc).isoformat(),
+        } if revocation else None,
         "mandate": auth_row.envelope,
         "used_count": auth_row.used_count,
         "requests": [
