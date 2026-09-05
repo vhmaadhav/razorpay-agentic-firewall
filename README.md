@@ -35,6 +35,10 @@ Run `pytest -q` or `python scripts/demo_scenarios.py` for a narrated walkthrough
 
 Agent requests require Ed25519 signatures. See [the signing protocol and client migration](docs/agent-request-signatures.md).
 
+Operators can revoke mandates with `POST /authorization/{id}/revoke`.
+Revocation blocks future agent requests and new payment execution, including
+previously allowed requests. See [revocation behavior and in-flight order limits](docs/mandate-revocation.md).
+
 ## Running locally
 
 ```bash

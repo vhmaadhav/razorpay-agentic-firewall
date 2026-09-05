@@ -26,6 +26,18 @@ class Authorization(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class MandateRevocation(Base):
+    """Separate state preserves signed envelopes and upgrades existing databases."""
+
+    __tablename__ = "mandate_revocations"
+
+    authorization_id: Mapped[str] = mapped_column(
+        String, ForeignKey("authorizations.authorization_id"), primary_key=True,
+    )
+    reason: Mapped[str] = mapped_column(String(500))
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class AgentRequestRow(Base):
     __tablename__ = "agent_requests"
     __table_args__ = (UniqueConstraint("authorization_id", "nonce", name="uq_auth_nonce"),)

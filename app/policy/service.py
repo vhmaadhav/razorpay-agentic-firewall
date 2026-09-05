@@ -14,21 +14,20 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.evidence.log import append_event
+from app.db import lock_authorization
 from app.crypto.agent_request import request_hash
 from app.crypto.signature import verify
 from app.canonical.hashing import compute_evidence_hash
 from app.models.envelope import Cart, CanonicalAuthorizationEnvelope
-from app.models.schema import AgentRequestRow, Authorization, PolicyDecision
-from app.policy.engine import Decision, evaluate_policy
+from app.models.schema import AgentRequestRow, MandateRevocation, PolicyDecision
+from app.policy.engine import Decision, Reason, PolicyResult, evaluate_policy
 
 
 def evaluate_agent_request(
     db: Session, *, authorization_id: str, agent_id: str, nonce: str, cart: Cart,
     agent_signature: str | None = None,
 ) -> dict:
-    auth_row = db.get(Authorization, authorization_id)
-    if not auth_row:
-        raise HTTPException(status_code=404, detail="Unknown authorization_id")
+    auth_row = lock_authorization(db, authorization_id)
 
     auth_envelope = CanonicalAuthorizationEnvelope(**auth_row.envelope)
 
@@ -66,7 +65,9 @@ def evaluate_agent_request(
     )
     nonce_already_used = existing is not None
 
-    result = evaluate_policy(
+    result = PolicyResult(
+        Decision.BLOCK, Reason.MANDATE_REVOKED, "Mandate has been revoked by the operator.",
+    ) if db.get(MandateRevocation, authorization_id) else evaluate_policy(
         auth_envelope,
         cart,
         current_time=datetime.now(timezone.utc),
@@ -105,7 +106,7 @@ def evaluate_agent_request(
     if result.decision == Decision.ALLOW:
         auth_row.used_count += 1
 
-    db.commit()
+    db.flush()
 
     append_event(
         db,
@@ -114,6 +115,7 @@ def evaluate_agent_request(
         actor=agent_id,
         payload={"request_id": request_id, "nonce": nonce, "cart": cart.model_dump(),
                  "agent_signature": agent_signature, "signature_verified": True},
+        commit=False,
     )
     append_event(
         db,
