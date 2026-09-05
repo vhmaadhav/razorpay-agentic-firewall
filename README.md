@@ -39,6 +39,9 @@ Operators can revoke mandates with `POST /authorization/{id}/revoke`.
 Revocation blocks future agent requests and new payment execution, including
 previously allowed requests. See [revocation behavior and in-flight order limits](docs/mandate-revocation.md).
 
+`POST /agent/request` is rate limited before parsing or database access.
+See [limits, HTTP 429 behavior, and worker configuration](docs/agent-rate-limiting.md).
+
 ## Running locally
 
 ```bash
